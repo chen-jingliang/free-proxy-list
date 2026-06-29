@@ -1,6 +1,6 @@
 name: 更新代理列表
 
-# 添加权限配置
+# 1. 核心权限配置（确保 Action 有权限写入你的 Fork 仓库）
 permissions:
   contents: write
   actions: read
@@ -16,9 +16,9 @@ on:
   workflow_dispatch:
     # 允许手动触发
 
-# 全局环境变量，用来屏蔽 Node 版本的弃用警告
+# 2. 全局环境变量：强制将所有 Action 切换到 Node.js 24 运行，彻底根除警告
 env:
-  ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: 'true'
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
 jobs:
   update-proxies:
@@ -28,7 +28,6 @@ jobs:
     - name: 检出代码
       uses: actions/checkout@v4
       with:
-        token: ${{ secrets.GITHUB_TOKEN }}
         fetch-depth: 0
         ref: main          
 
@@ -49,10 +48,11 @@ jobs:
         echo "抓取完成，检查文件是否生成..."
         if [ -f proxy.txt ]; then
           echo "proxy.txt 文件已生成"
+          echo "文件内容行数: $(wc -l < proxy.txt)"
           echo "文件内容预览："
           head -5 proxy.txt
         else
-          echo "proxy.txt 文件未生成"
+          echo "错误：proxy.txt 文件未生成！"
           exit 1
         fi
             
@@ -62,7 +62,16 @@ jobs:
       run: |
         git config --global user.email "action@github.com"
         git config --global user.name "GitHub Action"
+        
+        # 更加稳健的推送逻辑
         git remote set-url origin https://x-access-token:$GITHUB_TOKEN@github.com/${{ github.repository }}.git
         git add proxy.txt
-        git commit -m "更新代理列表" || echo "没有更改"
-        git push origin +main:main
+        
+        # 检查是否有内容变动
+        if git diff --staged --quiet; then
+          echo "【提示】proxy.txt 内容与仓库中的完全一致，没有发生任何变化，跳过提交。"
+        else
+          echo "检测到代理列表已更新，正在提交并推送到 main 分支..."
+          git commit -m "更新代理列表 [skip ci]"
+          git push origin HEAD:main
+        fi
